@@ -17,7 +17,7 @@ public class ConsoleLogger : ILogger
     {
         string[] options = Enum.GetNames<T>();
         string selected = Prompt(message, options);
-        return Enum.Parse<T>(selected, ignoreCase: true);
+        return Enum.Parse<T>(selected, true);
     }
 
     public string Prompt(string message, bool allowEmpty)
@@ -25,26 +25,6 @@ public class ConsoleLogger : ILogger
         TextPrompt<string> prompt = new(LogTextGenerator(message, ILogger.Color.Blue));
         if (allowEmpty) prompt.AllowEmpty();
         return AnsiConsole.Prompt(prompt);
-    }
-
-
-    private static string LogTextGenerator(string message, ILogger.Color? color = null, ILogger.Options? options = null)
-    {
-        string styles = options switch
-        {
-            ILogger.Options.Italics => " italic",
-            ILogger.Options.Bold => " bold",
-            _ => ""
-        };
-        string colorText =  color switch
-        {
-            ILogger.Color.Blue => "blue",
-            ILogger.Color.Green => "green",
-            ILogger.Color.Red => "red",
-            _ => "blue"
-        };
-        string text = $"[{colorText}{styles}]{message}[/]";
-        return text;
     }
 
     public void Log(ILogger.Level level, string message, ILogger.Options? options = null)
@@ -74,5 +54,25 @@ public class ConsoleLogger : ILogger
                 ProgressTask task = ctx.AddTask(LogTextGenerator(title, ILogger.Color.Green));
                 return await operation(value => task.Value = (double)value);
             });
+    }
+
+
+    private static string LogTextGenerator(string message, ILogger.Color? color = null, ILogger.Options? options = null)
+    {
+        string styles = options switch
+        {
+            ILogger.Options.Italics => " italic",
+            ILogger.Options.Bold => " bold",
+            _ => ""
+        };
+        string colorText = color switch
+        {
+            ILogger.Color.Blue => "blue",
+            ILogger.Color.Green => "green",
+            ILogger.Color.Red => "red",
+            _ => "blue"
+        };
+        string text = $"[{colorText}{styles}]{message}[/]";
+        return text;
     }
 }

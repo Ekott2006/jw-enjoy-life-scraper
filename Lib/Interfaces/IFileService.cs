@@ -1,6 +1,6 @@
 namespace Lib.Interfaces;
 
-public interface IFile
+public interface IFileService
 {
     Task WriteAllText(string path, string contents, CancellationToken token);
     Task<string> ReadAllText(string path, CancellationToken token);

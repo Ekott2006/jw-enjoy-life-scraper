@@ -8,13 +8,14 @@ const string cacheDir = ".cache";
 const string configFile = "config.json";
 const string downloadDir = "files";
 
+// TODO: Surround Everything in a try catch block
 ParallelOptions parallelOptions = new() { MaxDegreeOfParallelism = 8 };
 ConsoleLogger logger = new();
-CustomFile file = new();
+FileServiceService fileServiceService = new();
 CustomHttpClient httpClient = new();
-CustomDirectory directory = new();
-ConfigurationService configuration = new(file, logger);
-CacheService cacheService = new(cacheDir, file, httpClient, directory);
+DirectoryServiceService directoryServiceService = new();
+ConfigurationService configuration = new(fileServiceService, logger);
+CacheService cacheService = new(cacheDir, fileServiceService, httpClient, directoryServiceService);
 WebScraper webScraper = new(cacheService, logger, parallelOptions);
 
 logger.Log(ILogger.Level.Figlet, "JW Scraper");
@@ -48,8 +49,8 @@ Dictionary<string, decimal> metadata = Helper.GenerateMetadata(jsonResponseFromU
 // Ask the user what resolution and folder directory, if they want to use understandable or jwlibrary names, if they want grouping
 string resolution = GenerateResolution();
 string targetDir = GenerateTargetDirectory();
-WebScraper.DownloadFileNameType downloadFileNameType = GenerateDownloadFileNameType();
-WebScraper.DownloadFilePathType downloadFilePathType = GenerateDownloadFilePathType();
+IWebScraper.DownloadFileNameType downloadFileNameType = GenerateDownloadFileNameType();
+IWebScraper.DownloadFilePathType downloadFilePathType = GenerateDownloadFilePathType();
 
 // Write or stream to the files
 System.Console.WriteLine("Starting to Download the Files");
@@ -65,13 +66,12 @@ string GenerateResolution()
 {
     Dictionary<string, string> dictionary = [];
     foreach (KeyValuePair<string, decimal> pair in metadata)
-    {
         dictionary.Add(pair.Key, $"{pair.Key}: {Helper.FormatFileSize(pair.Value)}");
-    }
     string prompt = logger.Prompt("Select The Resolution:", dictionary.Values);
     return dictionary
         .First(pair => pair.Value.Equals(prompt, StringComparison.OrdinalIgnoreCase)).Key;
 }
+
 string GenerateTargetDirectory()
 {
     string targetDirPrompt =
@@ -80,12 +80,13 @@ string GenerateTargetDirectory()
         ? targetDirPrompt
         : Path.Combine(Directory.GetCurrentDirectory(), downloadDir);
 }
-WebScraper.DownloadFileNameType GenerateDownloadFileNameType()
+
+IWebScraper.DownloadFileNameType GenerateDownloadFileNameType()
 {
-    Dictionary<WebScraper.DownloadFileNameType, string> downloadFileNameHelper = new()
+    Dictionary<IWebScraper.DownloadFileNameType, string> downloadFileNameHelper = new()
     {
-        { WebScraper.DownloadFileNameType.JwLibrary, "JW Library Style (Difficult to Read File Name)" },
-        { WebScraper.DownloadFileNameType.Simple, "Simple (Easy to Read File Name)" },
+        { IWebScraper.DownloadFileNameType.JwLibrary, "JW Library Style (Difficult to Read File Name)" },
+        { IWebScraper.DownloadFileNameType.Simple, "Simple (Easy to Read File Name)" }
     };
 
     string downloadFileNameTypePrompt =
@@ -94,12 +95,12 @@ WebScraper.DownloadFileNameType GenerateDownloadFileNameType()
         .First(pair => pair.Value.Equals(downloadFileNameTypePrompt, StringComparison.OrdinalIgnoreCase)).Key;
 }
 
-WebScraper.DownloadFilePathType GenerateDownloadFilePathType()
+IWebScraper.DownloadFilePathType GenerateDownloadFilePathType()
 {
-    Dictionary<WebScraper.DownloadFilePathType, string> downloadFilePathHelper = new()
+    Dictionary<IWebScraper.DownloadFilePathType, string> downloadFilePathHelper = new()
     {
-        { WebScraper.DownloadFilePathType.Grouped, "JW Library Style (Videos divided by Section [config])" },
-        { WebScraper.DownloadFilePathType.Simple, "Simple (All Videos in one Directory)" },
+        { IWebScraper.DownloadFilePathType.Grouped, "JW Library Style (Videos divided by Section [config])" },
+        { IWebScraper.DownloadFilePathType.Simple, "Simple (All Videos in one Directory)" }
     };
 
     string downloadFilePathTypePrompt =

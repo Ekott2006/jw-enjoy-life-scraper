@@ -2,8 +2,8 @@ namespace Lib.Dto;
 
 public class LanguageDetail
 {
-    public string Name { get; set; }
-    public string Direction { get; set; }
-    public string Locale { get; set; }
-    public string Script { get; set; }
+    public required string Name { get; set; }
+    public required string Direction { get; set; }
+    public required string Locale { get; set; }
+    public required string Script { get; set; }
 }

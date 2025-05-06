@@ -1,5 +1,4 @@
-﻿using System.Reflection;
-using System.Runtime.Serialization;
+﻿using System.Runtime.Serialization;
 
 namespace Lib;
 
@@ -22,8 +21,11 @@ public static class EnumHelper
             .FirstOrDefault()?.Value ?? enumValue.ToString();
     }
 
-    public static T? GetEnumValueFromString<T>(string value) where T: Enum
+    public static T? GetEnumValueFromString<T>(string value) where T : Enum
     {
-        return (from field in typeof(T).GetFields() let attribute = (EnumMemberAttribute)Attribute.GetCustomAttribute(field, typeof(EnumMemberAttribute))! where attribute.Value == value select (T)Enum.Parse(typeof(T), field.Name)).FirstOrDefault();
+        return (from field in typeof(T).GetFields()
+            let attribute = (EnumMemberAttribute)Attribute.GetCustomAttribute(field, typeof(EnumMemberAttribute))!
+            where attribute.Value == value
+            select (T)Enum.Parse(typeof(T), field.Name)).FirstOrDefault();
     }
 }

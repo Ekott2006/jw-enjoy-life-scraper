@@ -1,6 +1,6 @@
 namespace Lib.Dto;
 
-public class File: PubImage
+public class File : PubImage
 {
-    public string Stream { get; set; }
+    public required string Stream { get; set; }
 }

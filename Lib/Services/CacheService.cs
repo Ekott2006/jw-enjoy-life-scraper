@@ -6,15 +6,16 @@ namespace Lib.Services;
 public class CacheService : ICacheService
 {
     private readonly string _cacheDir;
-    private readonly IFile _file;
     private readonly IHttpClient _client;
+    private readonly IFileService _fileService;
 
-    public CacheService(string cacheDir, IFile file, IHttpClient client, IDirectory directory)
+    public CacheService(string cacheDir, IFileService fileService, IHttpClient client,
+        IDirectoryService directoryService)
     {
         _cacheDir = cacheDir;
-        _file = file;
+        _fileService = fileService;
         _client = client;
-        directory.CreateDirectory(_cacheDir);
+        directoryService.CreateDirectory(_cacheDir);
     }
 
     public async Task Set<T>(string key, T value, CancellationToken token = default)
@@ -29,10 +30,50 @@ public class CacheService : ICacheService
     public async Task<T?> Get<T>(string key, CancellationToken token = default) where T : class
     {
         string cacheFilePath = Path.Combine(_cacheDir, Helper.GenerateHash(key));
-        if (!_file.Exists(cacheFilePath)) return null;
+        if (!_fileService.Exists(cacheFilePath)) return null;
 
         await using FileStream stream = File.OpenRead(cacheFilePath);
         return await JsonSerializer.DeserializeAsync<T>(stream, cancellationToken: token);
+    }
+
+    public async Task<string?> GetText(string url, CancellationToken token = default)
+    {
+        string cacheFilePath = Path.Combine(_cacheDir, Helper.GenerateHash(url) + ".txt");
+        if (_fileService.Exists(cacheFilePath)) return await _fileService.ReadAllText(cacheFilePath, token);
+
+        string? text = await _client.GetString(url, token);
+        if (text is null) return null;
+
+        await WriteToFile(cacheFilePath, text, token);
+        return text;
+    }
+
+    public async Task<T?> GetJson<T>(string url, CancellationToken token = default) where T : class
+    {
+        string cacheFilePath = Path.Combine(_cacheDir, Helper.GenerateHash(url) + ".json");
+        if (_fileService.Exists(cacheFilePath))
+            return JsonSerializer.Deserialize<T>(await _fileService.ReadAllText(cacheFilePath, token));
+
+        T? response = await _client.GetJson<T>(url, token);
+        if (response == null) return null;
+
+        await WriteToFile(cacheFilePath, JsonSerializer.Serialize(response), token);
+        return response;
+    }
+
+    public async Task<bool> Download(string dir, string url, string filename, CancellationToken token = default)
+    {
+        await Task.Delay(50, token);
+        string cacheFilePath = Path.Combine(dir, Helper.SanitizeFileName(filename));
+        if (_fileService.Exists(cacheFilePath)) return true;
+
+        Stream? downloadStream = _client.DownloadStream(url, token);
+        if (downloadStream is null) return false;
+
+        Directory.CreateDirectory(dir);
+        await using FileStream fileStream = _fileService.Create(cacheFilePath);
+        await downloadStream.CopyToAsync(fileStream, token);
+        return true;
     }
 
     private async Task WriteToFile<T>(string path, T text, CancellationToken token, bool isJson = false)
@@ -41,7 +82,7 @@ public class CacheService : ICacheService
         {
             if (!isJson)
             {
-                await _file.WriteAllText(path, text?.ToString() ?? "", token);
+                await _fileService.WriteAllText(path, text?.ToString() ?? "", token);
                 return;
             }
 
@@ -55,45 +96,5 @@ public class CacheService : ICacheService
         {
             Console.WriteLine("Exception: {0}", exception);
         }
-    }
-
-    public async Task<string?> GetText(string url, CancellationToken token = default)
-    {
-        string cacheFilePath = Path.Combine(_cacheDir, Helper.GenerateHash(url) + ".txt");
-        if (_file.Exists(cacheFilePath)) return await _file.ReadAllText(cacheFilePath, token);
-
-        string? text = await _client.GetString(url, token);
-        if (text is null) return null;
-
-        await WriteToFile(cacheFilePath, text, token);
-        return text;
-    }
-
-    public async Task<T?> GetJson<T>(string url, CancellationToken token = default) where T : class
-    {
-        string cacheFilePath = Path.Combine(_cacheDir, Helper.GenerateHash(url) + ".json");
-        if (_file.Exists(cacheFilePath))
-            return JsonSerializer.Deserialize<T>(await _file.ReadAllText(cacheFilePath, token));
-
-        T? response = await _client.GetJson<T>(url, token);
-        if (response == null) return null;
-
-        await WriteToFile(cacheFilePath, JsonSerializer.Serialize(response), token);
-        return response;
-    }
-
-    public async Task<bool> Download(string dir, string url, string filename, CancellationToken token = default)
-    {
-        await Task.Delay(50, token);
-        string cacheFilePath = Path.Combine(dir, Helper.SanitizeFileName(filename));
-        if (_file.Exists(cacheFilePath)) return true;
-
-        Stream? downloadStream = _client.DownloadStream(url, token);
-        if (downloadStream is null) return false;
-
-        Directory.CreateDirectory(dir);
-        await using FileStream fileStream = _file.Create(cacheFilePath);
-        await downloadStream.CopyToAsync(fileStream, token);
-        return true;
     }
 }

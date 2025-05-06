@@ -1,6 +1,6 @@
 namespace Lib.Interfaces;
 
-public interface IDirectory
+public interface IDirectoryService
 {
     DirectoryInfo CreateDirectory(string path);
 }

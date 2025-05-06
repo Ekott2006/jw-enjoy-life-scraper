@@ -3,7 +3,7 @@ using RestSharp;
 
 namespace Lib.Services;
 
-public class CustomHttpClient: IHttpClient
+public class CustomHttpClient : IHttpClient
 {
     private readonly RestClient _client = new();
 
@@ -16,7 +16,7 @@ public class CustomHttpClient: IHttpClient
     public async Task<T?> GetJson<T>(string url, CancellationToken cancellationToken)
     {
         RestRequest request = new(url);
-        return (await _client.GetAsync<T>(request, cancellationToken));
+        return await _client.GetAsync<T>(request, cancellationToken);
     }
 
     public Stream? DownloadStream(string url, CancellationToken cancellationToken)

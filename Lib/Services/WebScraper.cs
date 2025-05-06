@@ -1,56 +1,12 @@
 using System.Collections.Concurrent;
-using System.Runtime.Serialization;
 using HtmlAgilityPack;
 using Lib.Dto;
 using Lib.Interfaces;
 
 namespace Lib.Services;
 
-public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOptions parallelOptions)
+public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOptions parallelOptions) : IWebScraper
 {
-    private async Task<List<string>> ScrapeHtml(string html, CancellationToken token = default)
-    {
-        List<string>? cache = await cacheService.Get<List<string>>(html, token);
-        if (cache is not null) return cache;
-
-        const string nodeXPath = "//div[contains(@class, 'du-margin-children-vertical-desktopOnly--0')]";
-        HtmlDocument htmlDoc = new();
-        htmlDoc.LoadHtml(html);
-        List<HtmlNode> nodeList = htmlDoc.DocumentNode.SelectNodes(nodeXPath)?.ToList() ?? [];
-        List<string> result = nodeList
-            .Select(x => x.SelectSingleNode(".//div")?.Attributes["data-jsonurl"].Value)
-            .OfType<string>()
-            .ToList();
-        await cacheService.Set(html, result, token);
-        return result;
-    }
-
-    private async Task ParallelHelper<T>(IEnumerable<T> data, int doneTask, int allTasks,
-        Func<T, CancellationToken, ValueTask>? bodyAction = null,
-        Action<Exception, T>? errorAction = null, Action<decimal>? progressAction = null)
-    {
-        Lock @lock = new();
-        await Parallel.ForEachAsync(data, parallelOptions, async (item, token) =>
-        {
-            try
-            {
-                if (bodyAction != null) await bodyAction(item, token);
-            }
-            catch (Exception exception)
-            {
-                errorAction?.Invoke(exception, item);
-            }
-            finally
-            {
-                Interlocked.Increment(ref doneTask);
-                lock (@lock)
-                {
-                    progressAction?.Invoke((decimal)doneTask / allTasks * 100);
-                }
-            }
-        });
-    }
-
     public async Task<Dictionary<string, List<string>>> ScrapeJsonUrlsFromSections(
         Dictionary<string, string> sectionUrls, Action<decimal>? callback = null)
     {
@@ -102,7 +58,7 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
 
 
     public async Task DownloadAllFiles(Dictionary<string, List<JsonResponse>> sectionUrls, string resolution,
-        string targetDir, DownloadFileNameType fileNameType, DownloadFilePathType filePathType,
+        string targetDir, IWebScraper.DownloadFileNameType fileNameType, IWebScraper.DownloadFilePathType filePathType,
         Action<decimal>? callback = null)
     {
         int allTasks = sectionUrls.Values.SelectMany(x => x).Count();
@@ -112,15 +68,15 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
         {
             List<MovieDetail> result =
                 item.Value.Select(x =>
-                        x.Files.Values.FirstOrDefault()?.MovieMp4s.FirstOrDefault(movie => movie.Label == resolution))
+                        x.Files.Values.FirstOrDefault()?.MovieMp4S.FirstOrDefault(movie => movie.Label == resolution))
                     .OfType<MovieDetail>().ToList();
             await ParallelHelper(result, doneTask, allTasks, async (video, token) =>
                 {
                     string urlPath = new Uri(video.File.Url).AbsolutePath;
-                    string fileName = fileNameType == DownloadFileNameType.JwLibrary
+                    string fileName = fileNameType == IWebScraper.DownloadFileNameType.JwLibrary
                         ? Path.GetFileName(urlPath)
                         : video.Title + Path.GetExtension(urlPath);
-                    string dir = filePathType == DownloadFilePathType.Grouped
+                    string dir = filePathType == IWebScraper.DownloadFilePathType.Grouped
                         ? Path.Combine(targetDir, item.Key)
                         : targetDir;
                     await cacheService.Download(dir, video.File.Url, fileName, token);
@@ -135,6 +91,52 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
         }
     }
 
+    private async Task<List<string>> ScrapeHtml(string html, CancellationToken token = default)
+    {
+        List<string>? cache = await cacheService.Get<List<string>>(html, token);
+        if (cache is not null) return cache;
+
+        const string nodeXPath = "//div[contains(@class, 'du-margin-children-vertical-desktopOnly--0')]";
+        HtmlDocument htmlDoc = new();
+        htmlDoc.LoadHtml(html);
+        List<HtmlNode> nodeList = htmlDoc.DocumentNode.SelectNodes(nodeXPath)?.ToList() ?? [];
+        List<string> result = nodeList
+            .Select(x => x.SelectSingleNode(".//div")?.Attributes["data-jsonurl"].Value)
+            .OfType<string>()
+            .ToList();
+        await cacheService.Set(html, result, token);
+        return result;
+    }
+
+    private async Task ParallelHelper<T>(IEnumerable<T> data, int doneTask, int allTasks,
+        Func<T, CancellationToken, ValueTask>? bodyAction = null,
+        Action<Exception, T>? errorAction = null, Action<decimal>? progressAction = null)
+    {
+        Lock @lock = new();
+        await Parallel.ForEachAsync(data, parallelOptions, async (item, token) =>
+        {
+            try
+            {
+                if (bodyAction != null) await bodyAction(item, token);
+            }
+            catch (Exception exception)
+            {
+                errorAction?.Invoke(exception, item);
+            }
+            finally
+            {
+                Interlocked.Increment(ref doneTask);
+                lock (@lock)
+                {
+                    progressAction?.Invoke((decimal)doneTask / allTasks * 100);
+                }
+            }
+        });
+    }
+}
+
+public interface IWebScraper
+{
     public enum DownloadFileNameType
     {
         JwLibrary,
@@ -146,4 +148,14 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
         Simple,
         Grouped
     }
+
+    public Task<Dictionary<string, List<string>>> ScrapeJsonUrlsFromSections(
+        Dictionary<string, string> sectionUrls, Action<decimal>? callback = null);
+
+    public Task<Dictionary<string, List<JsonResponse>>> ScrapeJsonResponseFromUrls(
+        Dictionary<string, List<string>> sectionUrls, Action<decimal>? callback = null);
+
+    public Task DownloadAllFiles(Dictionary<string, List<JsonResponse>> sectionUrls, string resolution,
+        string targetDir, DownloadFileNameType fileNameType, DownloadFilePathType filePathType,
+        Action<decimal>? callback = null);
 }

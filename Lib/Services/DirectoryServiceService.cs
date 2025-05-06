@@ -2,7 +2,7 @@ using Lib.Interfaces;
 
 namespace Lib.Services;
 
-public class CustomDirectory: IDirectory
+public class DirectoryServiceService : IDirectoryService
 {
     public DirectoryInfo CreateDirectory(string path)
     {

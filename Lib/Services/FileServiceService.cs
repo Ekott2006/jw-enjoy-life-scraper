@@ -2,7 +2,7 @@ using Lib.Interfaces;
 
 namespace Lib.Services;
 
-public class CustomFile: IFile
+public class FileServiceService : IFileService
 {
     public async Task WriteAllText(string path, string contents, CancellationToken token = default)
     {
