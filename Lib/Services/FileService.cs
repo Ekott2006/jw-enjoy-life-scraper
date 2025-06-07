@@ -2,7 +2,7 @@ using Lib.Interfaces;
 
 namespace Lib.Services;
 
-public class FileServiceService : IFileService
+public class FileService : IFileService
 {
     public async Task WriteAllText(string path, string contents, CancellationToken token = default)
     {
@@ -14,6 +14,11 @@ public class FileServiceService : IFileService
         return await File.ReadAllTextAsync(path, token);
     }
 
+    public FileInfo GetFileData(string path)
+    {
+        return new FileInfo(path);
+    }
+
     public bool Exists(string path)
     {
         return File.Exists(path);
@@ -22,5 +27,10 @@ public class FileServiceService : IFileService
     public FileStream Create(string path)
     {
         return File.Create(path);
+    }
+
+     public DirectoryInfo CreateDirectory(string path)
+    {
+        return Directory.CreateDirectory(path);
     }
 }

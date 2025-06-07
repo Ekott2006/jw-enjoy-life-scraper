@@ -79,7 +79,7 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
                     string dir = filePathType == IWebScraper.DownloadFilePathType.Grouped
                         ? Path.Combine(targetDir, item.Key)
                         : targetDir;
-                    await cacheService.Download(dir, video.File.Url, fileName, token);
+                    await cacheService.Download(dir, video.File.Url, fileName, video.FileSize, token);
                 },
                 (exception, video) =>
                 {

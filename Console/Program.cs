@@ -11,11 +11,10 @@ const string downloadDir = "files";
 // TODO: Surround Everything in a try catch block
 ParallelOptions parallelOptions = new() { MaxDegreeOfParallelism = 8 };
 ConsoleLogger logger = new();
-FileServiceService fileServiceService = new();
+FileService fileService = new();
 CustomHttpClient httpClient = new();
-DirectoryServiceService directoryServiceService = new();
-ConfigurationService configuration = new(fileServiceService, logger);
-CacheService cacheService = new(cacheDir, fileServiceService, httpClient, directoryServiceService);
+ConfigurationService configuration = new(fileService, logger);
+CacheService cacheService = new(cacheDir, fileService, httpClient, logger);
 WebScraper webScraper = new(cacheService, logger, parallelOptions);
 
 logger.Log(ILogger.Level.Figlet, "JW Scraper");
@@ -43,8 +42,11 @@ logger.Log(ILogger.Level.Info, "Starting to Scrape the JSON", ILogger.Options.Bo
 Dictionary<string, List<JsonResponse>> jsonResponseFromUrls = await logger.WithProgress("JSON Progress:",
     async action => await webScraper.ScrapeJsonResponseFromUrls(jsonUrls, action));
 
+string selectedSections = logger.Prompt("Select the Section To be Downloaded:", ["All", .. jsonResponseFromUrls.Keys.Order()]);
+Dictionary<string, List<JsonResponse>> customSectionUrls = GetFromDictionary(jsonResponseFromUrls, selectedSections);
+
 // Some Metadata by getting the size by resolution, (3gp, 240, 360, 480, 720),
-Dictionary<string, decimal> metadata = Helper.GenerateMetadata(jsonResponseFromUrls.Values.SelectMany(x => x));
+Dictionary<string, decimal> metadata = Helper.GenerateMetadata(customSectionUrls.Values.SelectMany(x => x));
 
 // Ask the user what resolution and folder directory, if they want to use understandable or jwlibrary names, if they want grouping
 string resolution = GenerateResolution();
@@ -53,10 +55,10 @@ IWebScraper.DownloadFileNameType downloadFileNameType = GenerateDownloadFileName
 IWebScraper.DownloadFilePathType downloadFilePathType = GenerateDownloadFilePathType();
 
 // Write or stream to the files
-System.Console.WriteLine("Starting to Download the Files");
+logger.Log(ILogger.Level.Info, "Starting to Download the Files");
 await logger.WithProgress("Download Progress:", async action =>
 {
-    await webScraper.DownloadAllFiles(jsonResponseFromUrls, resolution, targetDir, downloadFileNameType,
+    await webScraper.DownloadAllFiles(customSectionUrls, resolution, targetDir, downloadFileNameType,
         downloadFilePathType, action);
     return Task.CurrentId;
 });
@@ -108,3 +110,7 @@ IWebScraper.DownloadFilePathType GenerateDownloadFilePathType()
     return downloadFilePathHelper
         .First(pair => pair.Value.Equals(downloadFilePathTypePrompt, StringComparison.OrdinalIgnoreCase)).Key;
 }
+
+
+Dictionary<string, T> GetFromDictionary<T>(Dictionary<string, T> data, string key) where T : notnull =>
+    data.TryGetValue(key, out T? value) ? new Dictionary<string, T> { { key, value } } : data;

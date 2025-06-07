@@ -7,15 +7,16 @@ public class CacheService : ICacheService
 {
     private readonly string _cacheDir;
     private readonly IHttpClient _client;
+    private readonly ILogger _logger;
     private readonly IFileService _fileService;
 
-    public CacheService(string cacheDir, IFileService fileService, IHttpClient client,
-        IDirectoryService directoryService)
+    public CacheService(string cacheDir, IFileService fileService,  IHttpClient client, ILogger logger)
     {
         _cacheDir = cacheDir;
         _fileService = fileService;
         _client = client;
-        directoryService.CreateDirectory(_cacheDir);
+        _logger = logger;
+        fileService.CreateDirectory(_cacheDir);
     }
 
     public async Task Set<T>(string key, T value, CancellationToken token = default)
@@ -61,16 +62,17 @@ public class CacheService : ICacheService
         return response;
     }
 
-    public async Task<bool> Download(string dir, string url, string filename, CancellationToken token = default)
+    public async Task<bool> Download(string dir, string url, string filename, int fileSize,
+        CancellationToken token = default)
     {
-        await Task.Delay(50, token);
         string cacheFilePath = Path.Combine(dir, Helper.SanitizeFileName(filename));
-        if (_fileService.Exists(cacheFilePath)) return true;
+        FileInfo fileInfo = _fileService.GetFileData(cacheFilePath);
+        if (fileInfo.Exists && fileInfo.Length == fileSize) return true;
 
         Stream? downloadStream = _client.DownloadStream(url, token);
         if (downloadStream is null) return false;
 
-        Directory.CreateDirectory(dir);
+        _fileService.CreateDirectory(dir);
         await using FileStream fileStream = _fileService.Create(cacheFilePath);
         await downloadStream.CopyToAsync(fileStream, token);
         return true;
@@ -94,7 +96,7 @@ public class CacheService : ICacheService
         }
         catch (Exception exception)
         {
-            Console.WriteLine("Exception: {0}", exception);
+            _logger.Log(ILogger.Level.Error,$"Exception: {exception.Message}");
         }
     }
 }
