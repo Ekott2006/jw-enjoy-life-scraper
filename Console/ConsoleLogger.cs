@@ -63,7 +63,7 @@ public class ConsoleLogger : ILogger
         {
             ILogger.Options.Italics => " italic",
             ILogger.Options.Bold => " bold",
-            _ => ""
+            _ => string.Empty
         };
         string colorText = color switch
         {

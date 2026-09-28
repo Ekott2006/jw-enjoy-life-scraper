@@ -8,5 +8,5 @@ public interface IFileService
     FileStream Create(string path);
     FileInfo GetFileData(string path);
     DirectoryInfo CreateDirectory(string path);
-    
+
 }

@@ -14,6 +14,6 @@ public class JsonResponse
     public int? Track { get; set; }
     public required string Specialty { get; set; }
     public required PubImage PubImage { get; set; }
-    public required Dictionary<string, LanguageDetail> Languages { get; set; }
-    public required Dictionary<string, FileDetail> Files { get; set; }
+public required Dictionary<string, LanguageDetail> Languages { get; set; }
+public required Dictionary<string, FileDetail> Files { get; set; }
 }

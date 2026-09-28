@@ -8,6 +8,8 @@ const string cacheDir = ".cache";
 const string configFile = "config.json";
 const string downloadDir = "files";
 
+string? checkLocal = null;
+
 // TODO: Surround Everything in a try catch block
 ParallelOptions parallelOptions = new() { MaxDegreeOfParallelism = 8 };
 ConsoleLogger logger = new();
@@ -24,25 +26,32 @@ logger.Log(ILogger.Level.Info,
     "Welcome to the Enjoy life Scrapper. A CLI that scrapes JW.ORG and gets enjoy life videos to download in bulk",
     ILogger.Options.Bold);
 
-Dictionary<string, Dictionary<string, string>>? config = await configuration.GetConfig(configFile);
+Dictionary<string, string>? config = await configuration.GetConfig(configFile);
 if (config is null) return;
 logger.Log(ILogger.Level.Info, "Config Found");
 
 // Ask the user to select the Language and get from config
 string language = logger.Prompt("Select The Language:", config.Keys);
-Dictionary<string, string> sectionUrls = config[language];
+Dictionary<string, string> sectionUrls =
+    Enumerable.Range(1, 4)
+        .ToDictionary(
+            i => $"Section {i}",
+            i => string.Format(config[language], i)
+        );
 
 // Make the first requests to get the **html** for each section
 logger.Log(ILogger.Level.Info, "Starting to Scrape the HTML", ILogger.Options.Bold);
+// logger.Log(ILogger.Level.Info, "Starting to Scrape the HTML");
 Dictionary<string, List<string>> jsonUrls = await logger.WithProgress("HTML Progress:",
     async action => await webScraper.ScrapeJsonUrlsFromSections(sectionUrls, action));
 
 // Make the second batch of request to get all the API JSON Links
-logger.Log(ILogger.Level.Info, "Starting to Scrape the JSON", ILogger.Options.Bold);
+// logger.Log(ILogger.Level.Info, "Starting to Scrape the JSON", ILogger.Options.Bold);
+logger.Log(ILogger.Level.Info, "Starting to Scrape the JSON");
 Dictionary<string, List<JsonResponse>> jsonResponseFromUrls = await logger.WithProgress("JSON Progress:",
     async action => await webScraper.ScrapeJsonResponseFromUrls(jsonUrls, action));
 
-string selectedSections = logger.Prompt("Select the Section To be Downloaded:", ["All", .. jsonResponseFromUrls.Keys.Order()]);
+string selectedSections = logger.Prompt("Select the Section To be Downloaded:", ["All", ..jsonResponseFromUrls.Keys.Order()]);
 Dictionary<string, List<JsonResponse>> customSectionUrls = GetFromDictionary(jsonResponseFromUrls, selectedSections);
 
 // Some Metadata by getting the size by resolution, (3gp, 240, 360, 480, 720),
@@ -54,12 +63,43 @@ string targetDir = GenerateTargetDirectory();
 IWebScraper.DownloadFileNameType downloadFileNameType = GenerateDownloadFileNameType();
 IWebScraper.DownloadFilePathType downloadFilePathType = GenerateDownloadFilePathType();
 
+// Ask the user to scan folder to filter existing downloads
+string scanFolderPrompt = logger.Prompt("Do you want to scan a folder to skip already downloaded files? (y/n)", true);
+if (scanFolderPrompt.Equals("y", StringComparison.OrdinalIgnoreCase))
+{
+    string folder = logger.Prompt("Enter the folder path to scan:", false);
+
+    if (!Directory.Exists(folder))
+    {
+        logger.Log(
+            ILogger.Level.Error,
+            $"Folder does not exist: {folder}. Proceeding without filtering."
+        );
+    }
+    else
+    {
+        logger.Log(
+            ILogger.Level.Info,
+            $"Folder exist: {folder}. And would be scanned\nWould download files >{resolution}"
+        );
+        checkLocal = folder;
+    }
+}
+
+if (customSectionUrls.Count == 0 || customSectionUrls.Values.All(list => list.Count == 0))
+{
+    logger.Log(ILogger.Level.Info, "All files are already downloaded or no files remain to download.");
+    return;
+}
+
 // Write or stream to the files
 logger.Log(ILogger.Level.Info, "Starting to Download the Files");
 await logger.WithProgress("Download Progress:", async action =>
 {
-    await webScraper.DownloadAllFiles(customSectionUrls, resolution, targetDir, downloadFileNameType,
-        downloadFilePathType, action);
+    await webScraper.DownloadAllFiles(
+        customSectionUrls, resolution,
+        targetDir, downloadFileNameType,
+        downloadFilePathType, checkLocal, action);
     return Task.CurrentId;
 });
 return;

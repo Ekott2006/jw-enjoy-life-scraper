@@ -7,4 +7,8 @@ public interface ICacheService
     public Task<string?> GetText(string url, CancellationToken token = default);
     public Task<T?> GetJson<T>(string url, CancellationToken token = default) where T : class;
     public Task<bool> Download(string dir, string url, string filename, int fileSize, CancellationToken token = default);
+    public Task<bool> CopyIfExist(
+        string dir, string filename, string localPath,
+        string resolution, CancellationToken token = default
+        );
 }
