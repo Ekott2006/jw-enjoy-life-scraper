@@ -24,8 +24,8 @@ public static class EnumHelper
     public static T? GetEnumValueFromString<T>(string value) where T : Enum
     {
         return (from field in typeof(T).GetFields()
-            let attribute = (EnumMemberAttribute)Attribute.GetCustomAttribute(field, typeof(EnumMemberAttribute))!
-            where attribute.Value == value
-            select (T)Enum.Parse(typeof(T), field.Name)).FirstOrDefault();
+                let attribute = (EnumMemberAttribute)Attribute.GetCustomAttribute(field, typeof(EnumMemberAttribute))!
+                where attribute.Value == value
+                select (T)Enum.Parse(typeof(T), field.Name)).FirstOrDefault();
     }
 }

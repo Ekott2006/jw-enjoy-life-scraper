@@ -1,0 +1,20 @@
+{
+  "Pidgin": {
+    "Section 1": "https://www.jw.org/wes-x-pgw/library/book/enjoy-life-now-and-forever/part-1/the-one-for-internet/",
+    "Section 2": "https://www.jw.org/wes-x-pgw/library/book/enjoy-life-now-and-forever/part-2/the-one-for-internet/",
+    "Section 3": "https://www.jw.org/wes-x-pgw/library/book/enjoy-life-now-and-forever/part-3/the-one-for-internet/",
+    "Section 4": "https://www.jw.org/wes-x-pgw/library/book/enjoy-life-now-and-forever/part-4/the-one-for-internet/"
+  },
+  "English": {
+    "Section 1": "https://www.jw.org/en/library/books/enjoy-life-forever/section-1/media/",
+    "Section 2": "https://www.jw.org/en/library/books/enjoy-life-forever/section-2/media/",
+    "Section 3": "https://www.jw.org/en/library/books/enjoy-life-forever/section-3/media/",
+    "Section 4": "https://www.jw.org/en/library/books/enjoy-life-forever/section-4/media/"
+  },
+  "Efik": {
+    "Section 1": "https://www.jw.org/efi/se-edonde/mme-nwed/du-ata-uwem-ke-nsinsi/ikpehe-1/se-isanade/",
+    "Section 2": "https://www.jw.org/efi/se-edonde/mme-nwed/du-ata-uwem-ke-nsinsi/ikpehe-2/se-isanade/",
+    "Section 3": "https://www.jw.org/efi/se-edonde/mme-nwed/du-ata-uwem-ke-nsinsi/ikpehe-3/se-isanade/",
+    "Section 4": "https://www.jw.org/efi/se-edonde/mme-nwed/du-ata-uwem-ke-nsinsi/ikpehe-4/se-isanade/"
+  }
+}

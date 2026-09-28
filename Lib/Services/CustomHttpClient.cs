@@ -7,6 +7,7 @@ public class CustomHttpClient : IHttpClient
 {
     private readonly RestClient _client = new();
 
+
     public async Task<string?> GetString(string url, CancellationToken cancellationToken)
     {
         RestRequest request = new(url);
@@ -19,9 +20,16 @@ public class CustomHttpClient : IHttpClient
         return await _client.GetAsync<T>(request, cancellationToken);
     }
 
-    public Stream? DownloadStream(string url, CancellationToken cancellationToken)
+    public Stream? DownloadStream(string url, CancellationToken cancellationToken, long? start, long? end = null)
     {
         RestRequest request = new(url);
+        request.AddHeader("Range", $"bytes={start ?? 0}-{end.ToString() ?? ""}");
         return _client.DownloadStream(request, cancellationToken);
+    }
+
+    public async Task<RestResponse> Head(string url, CancellationToken cancellationToken)
+    {
+        RestRequest request = new(url);
+        return await _client.HeadAsync(request, cancellationToken);
     }
 }

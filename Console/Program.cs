@@ -10,20 +10,21 @@ const string downloadDir = "files";
 
 // TODO: Surround Everything in a try catch block
 ParallelOptions parallelOptions = new() { MaxDegreeOfParallelism = 8 };
-ConsoleLogger logger = new();
-FileService fileService = new();
-CustomHttpClient httpClient = new();
+
+ILogger logger = new ConsoleLogger();
+IFileService fileService = new FileService();
+IHttpClient httpClient = new CustomHttpClient();
 ConfigurationService configuration = new(fileService, logger);
-CacheService cacheService = new(cacheDir, fileService, httpClient, logger);
-WebScraper webScraper = new(cacheService, logger, parallelOptions);
+ICacheService cacheService = new CacheService(cacheDir, fileService, httpClient, logger);
+IWebScraper webScraper = new WebScraper(fileService, cacheService, logger, parallelOptions);
 
 logger.Log(ILogger.Level.Figlet, "JW Scraper");
 
-// Read the **config.json** (get the section links)
 logger.Log(ILogger.Level.Info,
     "Welcome to the Enjoy life Scrapper. A CLI that scrapes JW.ORG and gets enjoy life videos to download in bulk",
     ILogger.Options.Bold);
 
+// Read the **config.json** (get the section links)
 Dictionary<string, Dictionary<string, string>>? config = await configuration.GetConfig(configFile);
 if (config is null) return;
 logger.Log(ILogger.Level.Info, "Config Found");
@@ -42,7 +43,8 @@ logger.Log(ILogger.Level.Info, "Starting to Scrape the JSON", ILogger.Options.Bo
 Dictionary<string, List<JsonResponse>> jsonResponseFromUrls = await logger.WithProgress("JSON Progress:",
     async action => await webScraper.ScrapeJsonResponseFromUrls(jsonUrls, action));
 
-string selectedSections = logger.Prompt("Select the Section To be Downloaded:", ["All", .. jsonResponseFromUrls.Keys.Order()]);
+string selectedSections =
+    logger.Prompt("Select the Section To be Downloaded:", ["All", .. jsonResponseFromUrls.Keys.Order()]);
 Dictionary<string, List<JsonResponse>> customSectionUrls = GetFromDictionary(jsonResponseFromUrls, selectedSections);
 
 // Some Metadata by getting the size by resolution, (3gp, 240, 360, 480, 720),
@@ -51,6 +53,7 @@ Dictionary<string, decimal> metadata = Helper.GenerateMetadata(customSectionUrls
 // Ask the user what resolution and folder directory, if they want to use understandable or jwlibrary names, if they want grouping
 string resolution = GenerateResolution();
 string targetDir = GenerateTargetDirectory();
+string? copyDir = GenerateCopyDirectory();
 IWebScraper.DownloadFileNameType downloadFileNameType = GenerateDownloadFileNameType();
 IWebScraper.DownloadFilePathType downloadFilePathType = GenerateDownloadFilePathType();
 
@@ -58,8 +61,15 @@ IWebScraper.DownloadFilePathType downloadFilePathType = GenerateDownloadFilePath
 logger.Log(ILogger.Level.Info, "Starting to Download the Files");
 await logger.WithProgress("Download Progress:", async action =>
 {
-    await webScraper.DownloadAllFiles(customSectionUrls, resolution, targetDir, downloadFileNameType,
-        downloadFilePathType, action);
+    await webScraper.DownloadAllFiles(
+        customSectionUrls,
+        resolution,
+        copyDir,
+        targetDir,
+        downloadFileNameType,
+        downloadFilePathType,
+        action
+    );
     return Task.CurrentId;
 });
 return;
@@ -83,6 +93,12 @@ string GenerateTargetDirectory()
         : Path.Combine(Directory.GetCurrentDirectory(), downloadDir);
 }
 
+string? GenerateCopyDirectory()
+{
+    string copyDirPrompt = logger.Prompt("What is the directory to copy file(s) from(empty is null)?", true);
+    return Directory.Exists(copyDirPrompt) ? copyDirPrompt : null;
+}
+
 IWebScraper.DownloadFileNameType GenerateDownloadFileNameType()
 {
     Dictionary<IWebScraper.DownloadFileNameType, string> downloadFileNameHelper = new()
@@ -101,7 +117,7 @@ IWebScraper.DownloadFilePathType GenerateDownloadFilePathType()
 {
     Dictionary<IWebScraper.DownloadFilePathType, string> downloadFilePathHelper = new()
     {
-        { IWebScraper.DownloadFilePathType.Grouped, "JW Library Style (Videos divided by Section [config])" },
+        { IWebScraper.DownloadFilePathType.Grouped, "JW Library Style (Videos divided by Section (config)" },
         { IWebScraper.DownloadFilePathType.Simple, "Simple (All Videos in one Directory)" }
     };
 
@@ -112,5 +128,7 @@ IWebScraper.DownloadFilePathType GenerateDownloadFilePathType()
 }
 
 
-Dictionary<string, T> GetFromDictionary<T>(Dictionary<string, T> data, string key) where T : notnull =>
-    data.TryGetValue(key, out T? value) ? new Dictionary<string, T> { { key, value } } : data;
+Dictionary<string, T> GetFromDictionary<T>(Dictionary<string, T> data, string key) where T : notnull
+{
+    return data.TryGetValue(key, out T? value) ? new Dictionary<string, T> { { key, value } } : data;
+}

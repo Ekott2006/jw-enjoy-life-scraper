@@ -1,21 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
     <PropertyGroup>
         <OutputType>Exe</OutputType>
-        <TargetFramework>net9.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <PublishSingleFile>true</PublishSingleFile>
     </PropertyGroup>
-
     <ItemGroup>
         <ProjectReference Include="..\Lib\Lib.csproj"/>
     </ItemGroup>
-
     <ItemGroup>
-        <PackageReference Include="Spectre.Console" Version="0.50.0"/>
+        <PackageReference Include="Spectre.Console"/>
     </ItemGroup>
-
     <ItemGroup>
         <Content Include=".git\COMMIT_EDITMSG"/>
         <Content Include=".git\config"/>
@@ -135,11 +131,14 @@
         <Content Include=".git\refs\heads\main"/>
         <Content Include=".git\refs\remotes\origin\main"/>
     </ItemGroup>
-
     <ItemGroup>
         <Folder Include=".git\objects\info\"/>
         <Folder Include=".git\objects\pack\"/>
         <Folder Include=".git\refs\tags\"/>
     </ItemGroup>
-
+    <ItemGroup>
+        <None Update="config.json">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
 </Project>

@@ -7,10 +7,10 @@ public class CacheService : ICacheService
 {
     private readonly string _cacheDir;
     private readonly IHttpClient _client;
-    private readonly ILogger _logger;
     private readonly IFileService _fileService;
+    private readonly ILogger _logger;
 
-    public CacheService(string cacheDir, IFileService fileService,  IHttpClient client, ILogger logger)
+    public CacheService(string cacheDir, IFileService fileService, IHttpClient client, ILogger logger)
     {
         _cacheDir = cacheDir;
         _fileService = fileService;
@@ -62,21 +62,74 @@ public class CacheService : ICacheService
         return response;
     }
 
-    public async Task<bool> Download(string dir, string url, string filename, int fileSize,
+
+    public async Task<bool> Download(
+        List<(string fileName, bool isCorrect)> possibleFileNames,
+        string destinationPath,
+        IReadOnlyDictionary<string, WebScraper.FileState> localFileHashIndex,
+        IReadOnlyDictionary<string, WebScraper.FileState> secondaryCopyHashIndex,
+        string downloadUrl,
+        long downloadFileSize,
         CancellationToken token = default)
     {
-        string cacheFilePath = Path.Combine(dir, Helper.SanitizeFileName(filename));
-        FileInfo fileInfo = _fileService.GetFileData(cacheFilePath);
-        if (fileInfo.Exists && fileInfo.Length == fileSize) return true;
+        Func<long?, string?, Task<bool>> downloadHelper = DownloadHelper(downloadUrl, destinationPath, token);
 
-        Stream? downloadStream = _client.DownloadStream(url, token);
-        if (downloadStream is null) return false;
 
-        _fileService.CreateDirectory(dir);
-        await using FileStream fileStream = _fileService.Create(cacheFilePath);
-        await downloadStream.CopyToAsync(fileStream, token);
-        return true;
+        foreach ((string fileName, bool isCorrect) item in possibleFileNames)
+        {
+            WebScraper.FileState? localFilePath = localFileHashIndex.GetValueOrDefault(item.fileName);
+
+            if (localFilePath is null) continue;
+
+            return item.isCorrect switch
+            {
+                // TODO: DOWNLOAD
+                true when downloadFileSize == localFilePath.Size => true,
+                true when downloadFileSize != localFilePath.Size => await downloadHelper(localFilePath.Size, null),
+                // TODO: COPY OR COPY AND DOWNLOAD
+                _ => await CopyAndDownloadHelper(downloadHelper, destinationPath, localFilePath, downloadFileSize)
+            };
+        }
+
+        IEnumerable<WebScraper.FileState> backupCopies = possibleFileNames
+            .Select(item => secondaryCopyHashIndex.GetValueOrDefault(item.fileName))
+            .OfType<WebScraper.FileState>().Distinct();
+        foreach (WebScraper.FileState copyFilePath in backupCopies)
+            // TODO: COPY OR COPY AND DOWNLOAD
+            return await CopyAndDownloadHelper(downloadHelper, destinationPath, copyFilePath, downloadFileSize);
+
+        // TODO: DOWNLOAD
+        return await downloadHelper(null, null);
     }
+
+    private static async Task<bool> CopyAndDownloadHelper(Func<long?, string?, Task<bool>> downloadHelper,
+        string destinationPath, WebScraper.FileState target, long downloadFileSize)
+    {
+        if (downloadFileSize == target.Size) return await downloadHelper(null, target.Path);
+
+        bool result = await downloadHelper(null, target.Path);
+        if (!result) return false;
+        return await downloadHelper(target.Size, null);
+    }
+
+    private Func<long?, string?, Task<bool>> DownloadHelper(string downloadUrl, string destinationPath,
+        CancellationToken token = default)
+    {
+        return async (start, sourcePath) =>
+        {
+            await using Stream? sourceStream = sourcePath is not null
+                ? _fileService.Open(sourcePath, start)
+                : _client.DownloadStream(downloadUrl, token, start);
+
+            if (sourceStream is null) return false;
+
+            await using FileStream destinationStream = _fileService.CreateOrOpen(destinationPath, start);
+            await sourceStream.CopyToAsync(destinationStream, token);
+
+            return true;
+        };
+    }
+
 
     private async Task WriteToFile<T>(string path, T text, CancellationToken token, bool isJson = false)
     {
@@ -96,7 +149,7 @@ public class CacheService : ICacheService
         }
         catch (Exception exception)
         {
-            _logger.Log(ILogger.Level.Error,$"Exception: {exception.Message}");
+            _logger.Log(ILogger.Level.Error, $"Exception: {exception.Message}");
         }
     }
 }

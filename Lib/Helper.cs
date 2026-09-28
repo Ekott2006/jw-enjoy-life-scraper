@@ -46,4 +46,10 @@ public static class Helper
     {
         return Path.GetInvalidFileNameChars().Aggregate(name, (current, c) => current.Replace(c, '_'));
     }
+
+    public static decimal ToPercentage(long part, long total)
+    {
+        if (total == 0) return 0m;
+        return (decimal)part / total * 100m;
+    }
 }

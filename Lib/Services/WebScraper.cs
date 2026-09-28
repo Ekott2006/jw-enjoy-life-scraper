@@ -1,17 +1,24 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using HtmlAgilityPack;
 using Lib.Dto;
 using Lib.Interfaces;
 
 namespace Lib.Services;
 
-public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOptions parallelOptions) : IWebScraper
+public class WebScraper(
+    IFileService fileService,
+    ICacheService cacheService,
+    ILogger logger,
+    ParallelOptions parallelOptions) : IWebScraper
 {
     public async Task<Dictionary<string, List<string>>> ScrapeJsonUrlsFromSections(
         Dictionary<string, string> sectionUrls, Action<decimal>? callback = null)
     {
         ConcurrentDictionary<string, List<string>> jsonUrlsBySection = new();
-        await ParallelHelper(sectionUrls, 0, sectionUrls.Count, async (item, token) =>
+        StrongBox<int> taskCompleted = new();
+        await ProcessParallelBatchAsync(sectionUrls, taskCompleted,
+            async (item, token) =>
             {
                 string? response = await cacheService.GetText(item.Value, token);
                 if (response is null) return;
@@ -22,7 +29,8 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
                 logger.Log(ILogger.Level.Error,
                     $"Error scraping HTML in section {item.Key}: {exception.Message}. URL: {item.Value}");
             },
-            progress => { callback?.Invoke(progress); });
+            CreateProgressHandler(sectionUrls.Count, callback)
+        );
         return jsonUrlsBySection.ToDictionary();
     }
 
@@ -30,14 +38,15 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
         Dictionary<string, List<string>> sectionUrls, Action<decimal>? callback = null)
     {
         Dictionary<string, List<JsonResponse>> jsonResponses = [];
-        int allTasks = sectionUrls.Values.SelectMany(x => x).Count();
-        int doneTask = 0;
+        StrongBox<int> taskCompleted = new(0);
+        int totalTasks = sectionUrls.Values.SelectMany(x => x).Count();
 
         foreach (KeyValuePair<string, List<string>> sectionUrl in sectionUrls)
         {
             ConcurrentBag<JsonResponse> jsonResponse = [];
 
-            await ParallelHelper(sectionUrl.Value, doneTask, allTasks, async (item, token) =>
+            await ProcessParallelBatchAsync(sectionUrl.Value, taskCompleted,
+                async (item, token) =>
                 {
                     JsonResponse? jsonData = await cacheService.GetJson<JsonResponse>(item, token);
                     if (jsonData is null) return;
@@ -48,9 +57,9 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
                     logger.Log(ILogger.Level.Error,
                         $"Error scraping JSON in section {sectionUrl.Key}: {exception.Message}. URL: {item}");
                 },
-                progress => { callback?.Invoke(progress); });
+                CreateProgressHandler(totalTasks, callback)
+            );
             jsonResponses.Add(sectionUrl.Key, jsonResponse.ToList());
-            doneTask += sectionUrl.Value.Count;
         }
 
         return jsonResponses;
@@ -58,11 +67,19 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
 
 
     public async Task DownloadAllFiles(Dictionary<string, List<JsonResponse>> sectionUrls, string resolution,
-        string targetDir, IWebScraper.DownloadFileNameType fileNameType, IWebScraper.DownloadFilePathType filePathType,
+        string? copyDir, string targetDir, IWebScraper.DownloadFileNameType fileNameType,
+        IWebScraper.DownloadFilePathType filePathType,
         Action<decimal>? callback = null)
     {
-        int allTasks = sectionUrls.Values.SelectMany(x => x).Count();
-        int doneTask = 0;
+        fileService.CreateDirectory(targetDir);
+        ConcurrentDictionary<string, FileState> localFileHashIndex =
+            new(GetFileStateIndex(targetDir));
+        Dictionary<string, FileState> secondaryCopyHashIndex =
+            copyDir is null ? [] : GetFileStateIndex(copyDir);
+
+
+        int totalTasks = sectionUrls.Values.SelectMany(x => x).Count();
+        StrongBox<int> doneTask = new(0);
 
         foreach (KeyValuePair<string, List<JsonResponse>> item in sectionUrls)
         {
@@ -70,25 +87,61 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
                 item.Value.Select(x =>
                         x.Files.Values.FirstOrDefault()?.MovieMp4S.FirstOrDefault(movie => movie.Label == resolution))
                     .OfType<MovieDetail>().ToList();
-            await ParallelHelper(result, doneTask, allTasks, async (video, token) =>
+            await ProcessParallelBatchAsync(result, doneTask,
+                async (video, token) =>
                 {
                     string urlPath = new Uri(video.File.Url).AbsolutePath;
-                    string fileName = fileNameType == IWebScraper.DownloadFileNameType.JwLibrary
-                        ? Path.GetFileName(urlPath)
-                        : video.Title + Path.GetExtension(urlPath);
                     string dir = filePathType == IWebScraper.DownloadFilePathType.Grouped
                         ? Path.Combine(targetDir, item.Key)
                         : targetDir;
-                    await cacheService.Download(dir, video.File.Url, fileName, video.FileSize, token);
+                    fileService.CreateDirectory(dir);
+
+                    List<(string fileName, bool isCorrect)> possibleFileNames =
+                    [
+                        (Path.GetFileName(urlPath), fileNameType == IWebScraper.DownloadFileNameType.JwLibrary),
+
+                        (video.Title + Path.GetExtension(urlPath),
+                            fileNameType != IWebScraper.DownloadFileNameType.JwLibrary)
+                    ];
+                    possibleFileNames =
+                    [
+                        .. possibleFileNames
+                            .Select(x => (Helper.SanitizeFileName(x.fileName), x.isCorrect))
+                    ];
+                    string fileName = possibleFileNames.Find(x => x.isCorrect).fileName;
+                    string destinationPath = Path.Combine(dir, fileName);
+
+                    bool isDownloaded = await cacheService.Download(
+                        possibleFileNames,
+                        destinationPath,
+                        localFileHashIndex,
+                        secondaryCopyHashIndex,
+                        video.File.Url,
+                        video.FileSize,
+                        token
+                    );
+
+                    if (isDownloaded)
+                        localFileHashIndex.TryAdd(fileName,
+                            new FileState(destinationPath, video.FileSize));
                 },
                 (exception, video) =>
                 {
                     logger.Log(ILogger.Level.Error,
                         $"Error downloading Videos in section {item.Key}: {exception.Message}. URL: {video.File.Url}");
                 },
-                progress => { callback?.Invoke(progress); });
-            doneTask += result.Count;
+                CreateProgressHandler(totalTasks, callback)
+            );
         }
+    }
+
+    private Dictionary<string, FileState> GetFileStateIndex(string path)
+    {
+        return fileService.GetAllFilePaths(path)
+            .Select(filePath => (Name: Helper.SanitizeFileName(Path.GetFileName(filePath)), Path: filePath,
+                Size: fileService.GetFileData(filePath).Length))
+            .DistinctBy(item => item.Name)
+            .ToDictionary(item => item.Name, item => new FileState(item.Path, item.Size));
     }
 
     private async Task<List<string>> ScrapeHtml(string html, CancellationToken token = default)
@@ -100,24 +153,30 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
         HtmlDocument htmlDoc = new();
         htmlDoc.LoadHtml(html);
         List<HtmlNode> nodeList = htmlDoc.DocumentNode.SelectNodes(nodeXPath)?.ToList() ?? [];
-        List<string> result = nodeList
-            .Select(x => x.SelectSingleNode(".//div")?.Attributes["data-jsonurl"].Value)
-            .OfType<string>()
-            .ToList();
+        List<string> result =
+        [
+            .. nodeList
+                .Select(x => x.SelectSingleNode(".//div")?.Attributes["data-jsonurl"].Value)
+                .OfType<string>()
+        ];
         await cacheService.Set(html, result, token);
         return result;
     }
 
-    private async Task ParallelHelper<T>(IEnumerable<T> data, int doneTask, int allTasks,
+    private async Task ProcessParallelBatchAsync<T>(
+        IEnumerable<T> items,
+        StrongBox<int> taskCompleted,
         Func<T, CancellationToken, ValueTask>? bodyAction = null,
-        Action<Exception, T>? errorAction = null, Action<decimal>? progressAction = null)
+        Action<Exception, T>? errorAction = null,
+        Action<int>? progressAction = null)
     {
-        Lock @lock = new();
-        await Parallel.ForEachAsync(data, parallelOptions, async (item, token) =>
+        Lock progressLock = new();
+
+        await Parallel.ForEachAsync(items, parallelOptions, async (item, token) =>
         {
             try
             {
-                if (bodyAction != null) await bodyAction(item, token);
+                if (bodyAction is not null) await bodyAction(item, token);
             }
             catch (Exception exception)
             {
@@ -125,37 +184,19 @@ public class WebScraper(ICacheService cacheService, ILogger logger, ParallelOpti
             }
             finally
             {
-                Interlocked.Increment(ref doneTask);
-                lock (@lock)
+                Interlocked.Increment(ref taskCompleted.Value);
+                lock (progressLock)
                 {
-                    progressAction?.Invoke((decimal)doneTask / allTasks * 100);
+                    progressAction?.Invoke(taskCompleted.Value);
                 }
             }
         });
     }
-}
 
-public interface IWebScraper
-{
-    public enum DownloadFileNameType
+    private static Action<int> CreateProgressHandler(int total, Action<decimal>? callback = null)
     {
-        JwLibrary,
-        Simple
+        return progress => callback?.Invoke(Helper.ToPercentage(progress, total));
     }
 
-    public enum DownloadFilePathType
-    {
-        Simple,
-        Grouped
-    }
-
-    public Task<Dictionary<string, List<string>>> ScrapeJsonUrlsFromSections(
-        Dictionary<string, string> sectionUrls, Action<decimal>? callback = null);
-
-    public Task<Dictionary<string, List<JsonResponse>>> ScrapeJsonResponseFromUrls(
-        Dictionary<string, List<string>> sectionUrls, Action<decimal>? callback = null);
-
-    public Task DownloadAllFiles(Dictionary<string, List<JsonResponse>> sectionUrls, string resolution,
-        string targetDir, DownloadFileNameType fileNameType, DownloadFilePathType filePathType,
-        Action<decimal>? callback = null);
+    public record FileState(string Path, long Size);
 }
